@@ -1,0 +1,31 @@
+{
+  "name": "fussball.de_mining",
+  "version": "1.0.0",
+  "description": "A tiny tool to mine as much as possible from fussball.de",
+  "main": "index.js",
+  "scripts": {
+    "start": "npm run build:live",
+    "build": "tsc -p .",
+    "build:live": "nodemon --watch 'src/**/*.ts' --exec 'ts-node' src/index.ts"
+  },
+  "author": "Christoph Zuleger",
+  "license": "ISC",
+  "dependencies": {
+    "@types/jsdom": "^12.2.4",
+    "@types/moment": "^2.13.0",
+    "@types/node": "^12.12.7",
+    "@types/node-fetch": "^2.5.3",
+    "@types/opentype": "0.0.4",
+    "@types/sqlite3": "^3.1.5",
+    "jsdom": "^15.2.1",
+    "moment": "^2.24.0",
+    "node-fetch": "^2.6.0",
+    "opentype.js": "^1.1.0",
+    "sqlite3": "^4.1.0"
+  },
+  "devDependencies": {
+    "nodemon": "^1.19.4",
+    "ts-node": "^8.4.1",
+    "typescript": "^3.7.2"
+  }
+}
