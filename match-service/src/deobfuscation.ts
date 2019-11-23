@@ -12,13 +12,18 @@ class FontParser {
     private __fontMutexList = new Array<FontMutexType>();
     private __dbInitialized: Promise<void>;
 
-    private __cache = new sqlite3.Database('cache.db', () => {
+    private __cache = new sqlite3.Database(':memory:', () => {
     });
 
     constructor() {
         this.__dbInitialized = this.__init();
     }
 
+    /**
+     * Initializes the cache database.
+     * 
+     * @returns a Promise resolving when all database objects are properly created.
+     */
     private __init(): Promise<void> {
         return new Promise((resolve, reject) => {
             this.__cache.serialize(() => {
@@ -68,31 +73,38 @@ class FontParser {
         });
     }
 
+    /**
+     * Downloads the font identified by the given font id and extracts its meta data.
+     * 
+     * @param fontId the internal font id (usually 8 characters long as mentioned in css and its filename)
+     * 
+     * @returns a Promise resolving to the font meta data.
+     */
     private __loadFont(fontId: string): Promise<Font> {
         const fontDownloadUrl = `http://www.fussball.de/export.fontface/-/format/woff/id/${fontId}/type/font`;
         let fontDownloadPath = `dist/test/${fontId}`;
 
         const result = new Promise<Font>(async (resolve, reject) => {
-            console.log(`[__loadFont] Starting to load font "${fontId}"...`);
+            //console.log(`[__loadFont] Starting to load font "${fontId}"...`);
             const writeStream = fs.createWriteStream(fontDownloadPath);
             const response = await fetch(fontDownloadUrl);
             response.body.pipe(writeStream);
             response.body.on("error", (err) => {
-                console.log(`[__loadFont] Error occured while writing font file for "${fontId}"!`);
+                //console.log(`[__loadFont] Error occured while writing font file for "${fontId}"!`);
                 return reject(err);
             });
             writeStream.on("finish", () => {
                 const font: Font = loadSync(fontDownloadPath);
-                console.log(`[__loadFont] Font file for "${fontId}" successfully loaded!`);
+                //console.log(`[__loadFont] Font file for "${fontId}" successfully loaded!`);
                 fs.unlinkSync(fontDownloadPath);
-                console.log(`[__loadFont] Font file for "${fontId}" successfully deleted!`);
+                //console.log(`[__loadFont] Font file for "${fontId}" successfully deleted!`);
                 return resolve(font);
             });
         })
             .then(async (font) => {
                 let fontCached = await this.isFontCached(fontId);
                 if (!fontCached) {
-                    console.log(`[__loadFont] Adding new font "${fontId}" to cache!`);
+                    //console.log(`[__loadFont] Adding new font "${fontId}" to cache!`);
                     fontCached = await this.addFontToCache(fontId, font);
                 }
                 if (!fontCached) {
@@ -102,7 +114,7 @@ class FontParser {
                 return font;
             });
 
-        console.log(`[__loadFont] Returning Promise for font loading: "${fontId}"`);
+        //console.log(`[__loadFont] Returning Promise for font loading: "${fontId}"`);
 
         return result;
     }
@@ -124,9 +136,9 @@ class FontParser {
             //console.log(`[loadFont] Font with id "${fontId}" found in mutex list...`);
             result = fontMutex[1];
         } else {
-            console.log(`[loadFont] Font with id "${fontId}" not found in mutex list...`);
+            //console.log(`[loadFont] Font with id "${fontId}" not found in mutex list...`);
             result = this.__loadFont(fontId);
-            console.log(`[loadFont] New font loading promise initialized for font with id "${fontId}".`);
+            //console.log(`[loadFont] New font loading promise initialized for font with id "${fontId}".`);
             this.__fontMutexList.push([fontId, result]);
         }
 
@@ -191,6 +203,13 @@ class FontParser {
         });
     }
 
+    /**
+     * Adds the association between the glyph (identified by its name and the id of the font) and the numeric unicode value to the cache.
+     *  
+     * @param fontId the internal font id (usually 8 characters long as mentioned in css and its filename)
+     * @param glyphName the name of the glyph as extracted from the font meta data (e.g. "four" or "two")
+     * @param glyphUnicode the decimal representation of the unicode character 
+     */
     private __cacheGlyphUnicode(fontId: string, glyphName: string, glyphUnicode: number): Promise<void> {
         const glyphUnicodeInsert = this.__cache.prepare(
             `INSERT INTO glyph_unicode (font_id, glyph_name, unicode) VALUES (?, ?, ?) ON CONFLICT DO NOTHING;`
@@ -204,9 +223,17 @@ class FontParser {
                 //console.log(`[__cacheGlyphUnicode] Glyph unicode record for "${glyphName}" and unicode "${glyphUnicode}" inserted.`);
                 return resolve();
             });
+            glyphUnicodeInsert.finalize();
         });
     }
 
+    /**
+     * Adds the a glyph (identified by the providing font id, its index and name) to the cache.
+     * 
+     * @param fontId the internal font id (usually 8 characters long as mentioned in css and its filename)
+     * @param glyphIndex the index of the glyph within its providing font metadata
+     * @param glyphName the name of the glyph as extracted from the font meta data (e.g. "four" or "two")
+     */
     private __cacheGlyph(fontId: string, glyphIndex: number, glyphName: string): Promise<void> {
         const glyphInsert = this.__cache.prepare(
             `INSERT INTO glyph (font_id, glyph_index, glyph_name) VALUES (?, ?, ?) ON CONFLICT DO NOTHING;`
@@ -220,6 +247,7 @@ class FontParser {
                 //console.log(`[__cacheGlyph] Glyph record for "${glyphName}" inserted.`);
                 return resolve();
             });
+            glyphInsert.finalize();
         });
     }
 
@@ -233,9 +261,10 @@ class FontParser {
                 if (error) {
                     return reject(error);
                 }
-                console.log(`[__cacheFont] Font record for "${fontId}" inserted.`);
+                //console.log(`[__cacheFont] Font record for "${fontId}" inserted.`);
                 return resolve();
             });
+            fontInsert.finalize();
         });
     }
 
@@ -248,7 +277,7 @@ class FontParser {
      * @returns a Promise resolving to a boolean success indicator
      */
     addFontToCache(fontId: string, font: Font): Promise<boolean> {
-        console.log(`[addFontToCache] Preparing db insertion...`);
+        //console.log(`[addFontToCache] Preparing db insertion...`);
         return new Promise(async (resolve, reject) => {
             try {
                 await this.__cacheFont(fontId, 'n/a');
@@ -263,7 +292,7 @@ class FontParser {
                 return resolve(true);
 
             } catch (ex) {
-                console.warn(`[addFontToCache] Failed to add font record for "${fontId}" to cache.`)
+                //console.warn(`[addFontToCache] Failed to add font record for "${fontId}" to cache.`)
                 return reject(ex);
             }
         });
