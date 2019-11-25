@@ -176,6 +176,14 @@ class FontCache {
         });
     }
 
+    /**
+     * Adds the given tuple of id and name to the cache.
+     * 
+     * @param fontId the internal font id (usually 8 characters long as mentioned in css and its filename)
+     * @param fontName the display name of the given font
+     * 
+     * @return a Promise resolving when the database record has been written
+     */
     cacheFont(fontId: string, fontName: string): Promise<void> {
         const fontInsert = this.__cache.prepare(
             `INSERT INTO font (id, name) VALUES (?, ?) ON CONFLICT DO NOTHING;`,
