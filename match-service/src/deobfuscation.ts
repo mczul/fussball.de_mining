@@ -10,11 +10,15 @@ type FontMutexType = [string, Promise<Font>];
 
 class FontCache {
     private __initialized: Promise<void>;
-    private __cache = new sqlite3.Database(':memory:', () => {
+    private __maxFontsToCache: number;
+    // private __cache = new sqlite3.Database(':memory:', () => {
+    // });
+    private __cache = new sqlite3.Database('test.db', () => {
     });
 
     constructor() {
         this.__initialized = this.init();
+        this.__maxFontsToCache = process.env.MATCH_SERVICE_MAX_FONTS_TO_CACHE ? parseInt(process.env.MATCH_SERVICE_MAX_FONTS_TO_CACHE) : 100;
     }
 
     /**
@@ -29,6 +33,7 @@ class FontCache {
                     CREATE TABLE IF NOT EXISTS font (
                         id VARCHAR(16) NOT NULL,
                         name VARCHAR(40) NOT NULL,
+                        created TIMESTAMP NOT NULL DEFAULT current_timestamp,
                         CONSTRAINT pk_font PRIMARY KEY (id)
                     );
                 `);
@@ -135,7 +140,7 @@ class FontCache {
      * @param glyphName the name of the glyph as extracted from the font meta data (e.g. "four" or "two")
      * @param glyphUnicode the decimal representation of the unicode character 
      */
-    cacheGlyphUnicode(fontId: string, glyphName: string, glyphUnicode: number): Promise<void> {
+    private __cacheGlyphUnicode(fontId: string, glyphName: string, glyphUnicode: number): Promise<void> {
         const glyphUnicodeInsert = this.__cache.prepare(
             `INSERT INTO glyph_unicode (font_id, glyph_name, unicode) VALUES (?, ?, ?) ON CONFLICT DO NOTHING;`
         );
@@ -159,7 +164,7 @@ class FontCache {
      * @param glyphIndex the index of the glyph within its providing font metadata
      * @param glyphName the name of the glyph as extracted from the font meta data (e.g. "four" or "two")
      */
-    cacheGlyph(fontId: string, glyphIndex: number, glyphName: string): Promise<void> {
+    private __cacheGlyph(fontId: string, glyphIndex: number, glyphName: string): Promise<void> {
         const glyphInsert = this.__cache.prepare(
             `INSERT INTO glyph (font_id, glyph_index, glyph_name) VALUES (?, ?, ?) ON CONFLICT DO NOTHING;`
         );
@@ -184,7 +189,7 @@ class FontCache {
      * 
      * @return a Promise resolving when the database record has been written
      */
-    cacheFont(fontId: string, fontName: string): Promise<void> {
+    private __cacheFont(fontId: string, fontName: string): Promise<void> {
         const fontInsert = this.__cache.prepare(
             `INSERT INTO font (id, name) VALUES (?, ?) ON CONFLICT DO NOTHING;`,
         );
@@ -201,6 +206,62 @@ class FontCache {
         });
     }
 
+    /**
+     * Removes any previously cached font that exceeds the cache limit (ordered by creation timestamp)
+     * 
+     * @returns a Promise resolving when the database size has been maintained.
+     */
+    private __cleanup(): Promise<void> {
+        const statement = this.__cache.prepare(
+            `WITH to_drop AS (
+                   SELECT id FROM font ORDER BY created DESC LIMIT -1 OFFSET ?
+               )
+               DELETE FROM font WHERE id IN (
+                   SELECT id 
+                   FROM to_drop
+               );`
+        );
+        return new Promise(async (resolve, reject) => {
+            await this.__initialized;
+            statement.run(this.__maxFontsToCache, (error: Error) => {
+                if (error) {
+                    return reject(error);
+                }
+                return resolve();
+            });
+            statement.finalize();
+        });
+    }
+
+    /**
+     * Adds the meta data of the referenced font to the cache database.
+     * 
+     * @param fontId the internal font id (usually 8 characters long as mentioned in css and its filename)
+     * @param font the font instance to be cached
+     * 
+     * @returns a Promise resolving to a boolean success indicator
+     */
+    addFontToCache(fontId: string, font: Font): Promise<boolean> {
+        //console.log(`[addFontToCache] Preparing db insertion...`);
+        return new Promise(async (resolve, reject) => {
+            try {
+                await this.__cacheFont(fontId, 'n/a');
+                await this.__cleanup();
+                for (let i = 0; i < font.glyphs.length; i++) {
+                    const glyph = font.glyphs.get(i);
+                    await this.__cacheGlyph(fontId, i, glyph.name);
+                    for (let j = 0; j < glyph.unicodes.length; j++) {
+                        await this.__cacheGlyphUnicode(fontId, glyph.name, glyph.unicodes[j]);
+                    }
+                }
+                return resolve(true);
+
+            } catch (ex) {
+                //console.warn(`[addFontToCache] Failed to add font record for "${fontId}" to cache.`)
+                return reject(ex);
+            }
+        });
+    }
 
     /**
      * Fetches the numeric digit by querying the previously cached font meta data
@@ -236,7 +297,7 @@ class FontParser {
     private __initialized: Promise<void>;
     private __fontDownloadDirPath = `${path.dirname(__filename)}/tmp/download`;
 
-    constructor() {//private __fontDownloadUrlTemplate: string) {
+    constructor() {
         this.__initialized = this.init();
     }
 
@@ -251,7 +312,7 @@ class FontParser {
                 fs.mkdirSync(this.__fontDownloadDirPath, { recursive: true });
             }
             return this.__fontCache.init();
-        }); 
+        });
     }
 
     /**
@@ -287,7 +348,7 @@ class FontParser {
                 let fontCached = await this.__fontCache.isFontCached(fontId);
                 if (!fontCached) {
                     //console.log(`[__loadFont] Adding new font "${fontId}" to cache!`);
-                    fontCached = await this.addFontToCache(fontId, font);
+                    fontCached = await this.__fontCache.addFontToCache(fontId, font);
                 }
                 if (!fontCached) {
                     throw new Error(`[__loadFont] Font "${fontId}" could not be cached!`);
@@ -325,36 +386,6 @@ class FontParser {
         }
 
         return result;
-    }
-
-    /**
-     * Adds the meta data of the referenced font to the cache database.
-     * 
-     * @param fontId the internal font id (usually 8 characters long as mentioned in css and its filename)
-     * @param font the font instance to be cached
-     * 
-     * @returns a Promise resolving to a boolean success indicator
-     */
-    addFontToCache(fontId: string, font: Font): Promise<boolean> {
-        //console.log(`[addFontToCache] Preparing db insertion...`);
-        return new Promise(async (resolve, reject) => {
-            try {
-                await this.__fontCache.cacheFont(fontId, 'n/a');
-
-                for (let i = 0; i < font.glyphs.length; i++) {
-                    const glyph = font.glyphs.get(i);
-                    await this.__fontCache.cacheGlyph(fontId, i, glyph.name);
-                    for (let j = 0; j < glyph.unicodes.length; j++) {
-                        await this.__fontCache.cacheGlyphUnicode(fontId, glyph.name, glyph.unicodes[j]);
-                    }
-                }
-                return resolve(true);
-
-            } catch (ex) {
-                //console.warn(`[addFontToCache] Failed to add font record for "${fontId}" to cache.`)
-                return reject(ex);
-            }
-        });
     }
 
     /**
