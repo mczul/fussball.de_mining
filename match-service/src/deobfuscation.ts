@@ -11,9 +11,7 @@ type FontMutexType = [string, Promise<Font>];
 class FontCache {
     private __initialized: Promise<void>;
     private __maxFontsToCache: number;
-    // private __cache = new sqlite3.Database(':memory:', () => {
-    // });
-    private __cache = new sqlite3.Database('test.db', () => {
+    private __cache = new sqlite3.Database(':memory:', () => {
     });
 
     constructor() {
