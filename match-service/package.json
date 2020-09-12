@@ -23,7 +23,7 @@
     "jsdom": "^15.2.1",
     "moment": "^2.24.0",
     "morgan": "^1.9.1",
-    "node-fetch": "^2.6.0",
+    "node-fetch": "^2.6.1",
     "opentype.js": "^1.1.0",
     "sqlite3": "^4.1.0"
   },
