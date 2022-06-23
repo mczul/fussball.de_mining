@@ -20,7 +20,7 @@
     "@types/opentype": "0.0.4",
     "@types/sqlite3": "^3.1.5",
     "express": "^4.17.1",
-    "jsdom": "^15.2.1",
+    "jsdom": "^16.5.0",
     "moment": "^2.24.0",
     "morgan": "^1.9.1",
     "node-fetch": "^2.6.0",
